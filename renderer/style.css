@@ -126,6 +126,24 @@ html, body {
   z-index: 1;
 }
 
+/* Update badge on pill */
+#update-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+  animation: pulseBadge 1.8s ease-in-out infinite;
+  z-index: 2;
+  cursor: pointer;
+}
+@keyframes pulseBadge {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%       { transform: scale(1.4); opacity: 0.7; }
+}
+
 /* Active service colors on pill */
 #pill[data-service="chatgpt"]:hover    .dot { background: var(--chatgpt); box-shadow: 0 0 8px var(--chatgpt); }
 #pill[data-service="claude"]:hover     .dot { background: var(--claude);  box-shadow: 0 0 8px var(--claude); }

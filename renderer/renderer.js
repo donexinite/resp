@@ -731,10 +731,14 @@ btnCheckUpdates.addEventListener('click', () => {
 });
 
 // ── Updates ────────────────────────────────────────────────────────────────────
+const updateBadge = $('update-badge');
+updateBadge.addEventListener('click', e => { e.stopPropagation(); R.expand(); });
+
 R.onUpdateAvailable(info => {
   pendingUpdateVersion = info.version;
   updateMsg.textContent = 'Update v' + info.version + ' available';
   updateBar.classList.remove('hidden');
+  updateBadge.classList.remove('hidden');
 });
 btnUpdateNow.addEventListener('click', () => {
   updateBtns.classList.add('hidden');
@@ -743,6 +747,7 @@ btnUpdateNow.addEventListener('click', () => {
 });
 btnUpdateLater.addEventListener('click', () => {
   updateBar.classList.add('hidden');
+  updateBadge.classList.add('hidden');
   R.dismissUpdate(pendingUpdateVersion);
 });
 R.onUpdateProgress(pct => {

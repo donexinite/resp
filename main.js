@@ -2,7 +2,7 @@
 
 const {
   app, BrowserWindow, ipcMain, globalShortcut,
-  Tray, Menu, desktopCapturer, screen, nativeImage, clipboard, shell
+  Tray, Menu, desktopCapturer, screen, nativeImage, clipboard, shell, Notification
 } = require('electron');
 const path  = require('path');
 const os    = require('os');
@@ -575,6 +575,16 @@ function checkUpdates() {
             current: app.getVersion(),
             notes:   remote.notes || '',
           });
+          // System notification so users see it even with panel closed
+          if (Notification.isSupported()) {
+            const n = new Notification({
+              title: 'RespGPT update available',
+              body:  `v${remote.version} is ready — open RespGPT to install it.`,
+              silent: true,
+            });
+            n.on('click', () => { if (win) { win.show(); doExpand(); } });
+            n.show();
+          }
         }
       } catch (_) {}
     });
