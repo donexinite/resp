@@ -1,4 +1,4 @@
 {
-  "version": "1.2.0",
-  "notes": "Update notifications (pill badge + system notification), check for updates feedback, old version cleanup prompt, recurring background update checks."
+  "version": "1.2.1",
+  "notes": "Stability improvements and minor fixes."
 }
