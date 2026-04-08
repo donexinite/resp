@@ -421,7 +421,7 @@ function registerIPC() {
   ipcMain.on('reset-position', () => resetPosition());
 
   // ── Updates on demand ──
-  ipcMain.on('check-updates-now', () => checkUpdates());
+  ipcMain.on('check-updates-now', () => checkUpdates(true));
 }
 
 // ── Mini toggle ────────────────────────────────────────────────────────────────
@@ -557,7 +557,9 @@ ipcMain.on('delete-old-installs', (_e, dirs) => {
 });
 
 // ── Auto-updater ───────────────────────────────────────────────────────────────
-function checkUpdates() {
+function checkUpdates(manual = false) {
+  function notify(msg) { if (manual && win) win.webContents.send('update-check-result', msg); }
+
   https.get(UPDATE_URL + '/version.json', { headers: { 'User-Agent': 'RespGPT' } }, res => {
     let data = '';
     res.on('data', c => data += c);
@@ -585,10 +587,12 @@ function checkUpdates() {
             n.on('click', () => { if (win) { win.show(); doExpand(); } });
             n.show();
           }
+        } else {
+          notify(`You're on the latest version (v${app.getVersion()})`);
         }
-      } catch (_) {}
+      } catch (_) { notify('Could not parse update info'); }
     });
-  }).on('error', () => {});
+  }).on('error', () => notify('No internet connection'));
 }
 
 function downloadUpdate() {

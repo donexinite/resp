@@ -758,6 +758,7 @@ R.onUpdateError(msg => {
   updateBar.classList.add('hidden');
   showToast('Update failed: ' + msg);
 });
+R.onUpdateCheckResult(msg => showToast(msg));
 
 // ── Old-install cleanup ────────────────────────────────────────────────────────
 const cleanupModal   = $('cleanup-modal');
