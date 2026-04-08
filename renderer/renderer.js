@@ -754,6 +754,36 @@ R.onUpdateError(msg => {
   showToast('Update failed: ' + msg);
 });
 
+// ── Old-install cleanup ────────────────────────────────────────────────────────
+const cleanupModal   = $('cleanup-modal');
+const cleanupPaths   = $('cleanup-paths');
+const cleanupDelete  = $('cleanup-delete');
+const cleanupSkip    = $('cleanup-skip');
+const cleanupBackdrop = document.getElementById('cleanup-backdrop');
+
+let pendingCleanupDirs = [];
+
+R.onOldInstallsFound(dirs => {
+  if (!dirs || dirs.length === 0) return;
+  pendingCleanupDirs = dirs;
+  cleanupPaths.innerHTML = dirs.map(d =>
+    `<div class="cleanup-path">${d}</div>`
+  ).join('');
+  cleanupModal.classList.remove('hidden');
+});
+
+cleanupDelete.addEventListener('click', () => {
+  R.deleteOldInstalls(pendingCleanupDirs);
+  cleanupModal.classList.add('hidden');
+  showToast('Old versions deleted');
+});
+cleanupSkip.addEventListener('click', () => {
+  cleanupModal.classList.add('hidden');
+});
+cleanupBackdrop.addEventListener('click', () => {
+  cleanupModal.classList.add('hidden');
+});
+
 // ── Command palette ────────────────────────────────────────────────────────────
 const COMMANDS = [
   { id: 'tab-chatgpt',    label: 'Go to ChatGPT',     hint: 'Ctrl+1', icon: 'chat',    action: () => switchTab('chatgpt') },

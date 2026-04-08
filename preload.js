@@ -52,7 +52,9 @@ contextBridge.exposeInMainWorld('respAPI', {
   onMiniChanged:     cb => ipcRenderer.on('mini-changed',     (_e, v) => cb(v)),
   onAOTChanged:      cb => ipcRenderer.on('aot-changed',      (_e, v) => cb(v)),
   onTypingDone:      cb => ipcRenderer.on('typing-done',      ()      => cb()),
-  onUpdateAvailable: cb => ipcRenderer.on('update-available', (_e, d) => cb(d)),
-  onUpdateProgress:  cb => ipcRenderer.on('update-progress',  (_e, p) => cb(p)),
-  onUpdateError:     cb => ipcRenderer.on('update-error',     (_e, m) => cb(m)),
+  onUpdateAvailable:    cb => ipcRenderer.on('update-available',    (_e, d) => cb(d)),
+  onUpdateProgress:     cb => ipcRenderer.on('update-progress',     (_e, p) => cb(p)),
+  onUpdateError:        cb => ipcRenderer.on('update-error',        (_e, m) => cb(m)),
+  onOldInstallsFound:   cb => ipcRenderer.on('old-installs-found',  (_e, dirs) => cb(dirs)),
+  deleteOldInstalls:    dirs => ipcRenderer.send('delete-old-installs', dirs),
 });

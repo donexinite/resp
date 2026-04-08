@@ -47,6 +47,7 @@ const DEFAULT_CONFIG = {
   zoomFactors: { chatgpt: 1, claude: 1, gemini: 1, perplexity: 1, walterw: 1 },
   templates: [],          // [{id, title, body}]
   dismissedUpdate: '',
+  cleanupPrompted: false, // shown old-install cleanup prompt
 };
 let config = { ...DEFAULT_CONFIG };
 
@@ -184,6 +185,11 @@ function createWindow() {
   // Update checker — on launch + every 30 minutes
   setTimeout(checkUpdates, 4000);
   setInterval(checkUpdates, 30 * 60 * 1000);
+
+  // Old-install cleanup prompt (first launch only)
+  if (!config.cleanupPrompted) {
+    setTimeout(scanOldInstalls, 6000);
+  }
 }
 
 // ── IPC (registered once, globally) ────────────────────────────────────────────
@@ -503,6 +509,52 @@ function refreshTrayMenu() {
     { label: 'Quit', click: () => app.quit() },
   ]));
 }
+
+// ── Old-install cleanup ────────────────────────────────────────────────────────
+function scanOldInstalls() {
+  const currentDir = path.dirname(app.getPath('exe')).toLowerCase();
+  const targets    = ['RespGPT.exe', 'NotchGPT.exe'];
+  const searchDirs = [
+    os.homedir(),
+    path.join(os.homedir(), 'Desktop'),
+    path.join(os.homedir(), 'Downloads'),
+    path.join(os.homedir(), 'Documents'),
+    'C:\\',
+    'D:\\',
+  ];
+
+  const found = new Set();
+
+  for (const base of searchDirs) {
+    try {
+      const entries = fs.readdirSync(base, { withFileTypes: true });
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        const dir = path.join(base, e.name);
+        if (dir.toLowerCase() === currentDir) continue;
+        for (const exe of targets) {
+          try {
+            fs.accessSync(path.join(dir, exe));
+            found.add(dir);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  config.cleanupPrompted = true;
+  saveConfig();
+
+  if (found.size > 0 && win) {
+    win.webContents.send('old-installs-found', [...found]);
+  }
+}
+
+ipcMain.on('delete-old-installs', (_e, dirs) => {
+  for (const dir of dirs) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
 
 // ── Auto-updater ───────────────────────────────────────────────────────────────
 function checkUpdates() {

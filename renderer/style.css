@@ -795,6 +795,101 @@ input:checked + .sw-slider::before { transform: translateX(16px); background: #f
   to   { opacity: 1; transform: translateY(0)    scale(1); }
 }
 
+/* ═══════════════════ Cleanup Modal ═══════════════════ */
+#cleanup-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#cleanup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 200ms var(--ease);
+}
+#cleanup-box {
+  position: relative;
+  background: var(--bg2);
+  border: 1px solid var(--b2);
+  border-radius: 16px;
+  width: 440px;
+  max-width: calc(100vw - 40px);
+  padding: 28px 28px 24px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+  animation: popIn 220ms var(--ease);
+  text-align: center;
+}
+#cleanup-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+#cleanup-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--t0);
+  margin: 0 0 8px;
+}
+#cleanup-desc {
+  font-size: 12px;
+  color: var(--t2);
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+#cleanup-paths {
+  background: var(--bg1);
+  border: 1px solid var(--b1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 20px;
+  text-align: left;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.cleanup-path {
+  font-size: 11px;
+  color: var(--t1);
+  font-family: monospace;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--b1);
+  word-break: break-all;
+}
+.cleanup-path:last-child { border-bottom: none; }
+#cleanup-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+#cleanup-skip {
+  padding: 8px 20px;
+  background: transparent;
+  border: 1px solid var(--b2);
+  border-radius: 8px;
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+#cleanup-skip:hover { background: var(--bg3); color: var(--t0); }
+#cleanup-delete {
+  padding: 8px 20px;
+  background: #ef4444;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms, transform 100ms;
+}
+#cleanup-delete:hover  { background: #dc2626; }
+#cleanup-delete:active { transform: scale(0.97); }
+
 /* ═══════════════════ Toast ═══════════════════ */
 #toast {
   position: fixed;
