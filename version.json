@@ -1,4 +1,4 @@
 {
-  "version": "1.0.2",
-  "notes": "Renamed to RespGPT, no trace of NotchGPT in source"
+  "version": "1.0.3",
+  "notes": "Pill can now be dragged freely"
 }
