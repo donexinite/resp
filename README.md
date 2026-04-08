@@ -70,9 +70,12 @@ A floating AI overlay for Windows that keeps ChatGPT, Claude, Gemini, Perplexity
 
 ## Installation
 
-1. Download the latest `RespGPT.asar` from [Releases](https://github.com/donexinite/resp/releases)
-2. Run it — no install required (portable)
-3. The pill appears at the top of your screen
+1. Download `RespGPT-vX.X.X.zip` from [Releases](https://github.com/donexinite/resp/releases)
+2. Extract the zip anywhere
+3. Run `RespGPT.exe` — no install required
+4. The pill appears at the top of your screen
+
+> **Updating?** The app updates itself automatically. If you see an update banner inside the app, just click Download — no need to re-download the zip.
 
 ---
 
