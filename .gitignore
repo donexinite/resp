@@ -1,0 +1,8 @@
+node_modules/
+dist/
+_staging/
+src-extracted/
+create-release.ps1
+respgpt-config.json
+package-lock.json
+*.tmp
