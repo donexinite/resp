@@ -1,4 +1,4 @@
 {
-  "version": "1.2.1",
-  "notes": "Stability improvements and minor fixes."
+  "version": "1.2.2",
+  "notes": "Always open on ChatGPT tab on launch."
 }

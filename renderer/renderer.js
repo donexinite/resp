@@ -185,8 +185,8 @@ R.onConfigLoaded(cfg => {
   aotToggle.checked      = cfg.alwaysOnTop !== false;
   startupToggle.checked  = !!cfg.startOnBoot;
 
-  activeSvc = cfg.activeTab || 'chatgpt';
-  switchTab(activeSvc, false);
+  activeSvc = 'chatgpt';
+  switchTab('chatgpt', false);
 
   if (cfg.zoomFactors) {
     Object.keys(cfg.zoomFactors).forEach(svc => {
