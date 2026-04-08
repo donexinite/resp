@@ -181,8 +181,9 @@ function createWindow() {
     win.webContents.send('config-loaded', config);
   });
 
-  // Update checker
+  // Update checker — on launch + every 30 minutes
   setTimeout(checkUpdates, 4000);
+  setInterval(checkUpdates, 30 * 60 * 1000);
 }
 
 // ── IPC (registered once, globally) ────────────────────────────────────────────
