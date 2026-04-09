@@ -821,8 +821,6 @@ let oauthTimer = null;
 
 R.onOAuthBlocked(() => {
   oauthNotice.classList.remove('hidden');
-  if (oauthTimer) clearTimeout(oauthTimer);
-  oauthTimer = setTimeout(() => oauthNotice.classList.add('hidden'), 12000);
 });
 oauthDismiss.addEventListener('click', () => {
   oauthNotice.classList.add('hidden');

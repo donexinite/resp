@@ -362,8 +362,13 @@
         <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
     </div>
-    <p id="oauth-notice-text">Google & Facebook sign-in is blocked in overlay apps. Please use <strong>email & password</strong> to sign in.</p>
-    <p id="oauth-notice-hint">If you only have a Google account, open the site in your browser first to set a password.</p>
+    <p id="oauth-notice-text">Google/Facebook sign-in can't work inside overlay apps — Google blocks it.</p>
+    <div id="oauth-steps">
+      <div class="oauth-step"><span class="oauth-step-num">1</span> Click below to open this site in your browser</div>
+      <div class="oauth-step"><span class="oauth-step-num">2</span> Log in with Google there, then go to account settings</div>
+      <div class="oauth-step"><span class="oauth-step-num">3</span> Set a password on your account</div>
+      <div class="oauth-step"><span class="oauth-step-num">4</span> Come back here and sign in with <strong>email & password</strong></div>
+    </div>
     <div id="oauth-notice-actions">
       <button id="oauth-open-browser">Open in browser</button>
       <button id="oauth-dismiss">Got it</button>

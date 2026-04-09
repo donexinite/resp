@@ -840,13 +840,35 @@ input:checked + .sw-slider::before { transform: translateX(16px); background: #f
   font-size: 12.5px;
   color: var(--t0);
   line-height: 1.6;
-  margin: 0 0 6px;
+  margin: 0 0 12px;
 }
-#oauth-notice-hint {
-  font-size: 11px;
-  color: var(--t3);
-  line-height: 1.5;
+#oauth-steps {
+  text-align: left;
   margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.oauth-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--t1);
+  line-height: 1.5;
+}
+.oauth-step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #oauth-notice-actions {
   display: flex;
