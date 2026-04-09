@@ -2,7 +2,7 @@
 
 const {
   app, BrowserWindow, ipcMain, globalShortcut,
-  Tray, Menu, desktopCapturer, screen, nativeImage, clipboard, shell, Notification
+  Tray, Menu, desktopCapturer, screen, nativeImage, clipboard, shell, Notification, session
 } = require('electron');
 const path  = require('path');
 const os    = require('os');
@@ -139,6 +139,45 @@ function toggleExpand() {
   if (!win) return;
   if (isAnimating) return;
   if (isExpanded) doCollapse(); else doExpand();
+}
+
+// ── Webview session hardening (anti-Cloudflare-detection) ─────────────────────
+function setupWebviewSessions() {
+  const CHROME_UA     = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const SEC_CH_UA     = '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"';
+  const preloadScript = path.join(__dirname, 'renderer', 'webview-preload.js');
+  const partitions    = ['persist:chatgpt', 'persist:claude', 'persist:gemini', 'persist:perplexity', 'persist:walterw'];
+
+  for (const part of partitions) {
+    const ses = session.fromPartition(part);
+
+    // Inject anti-detection script before every page runs
+    ses.setPreloads([preloadScript]);
+
+    // Override user agent at session level (more reliable than webview attribute)
+    ses.setUserAgent(CHROME_UA);
+
+    // Strip Electron from all outgoing request headers
+    ses.webRequest.onBeforeSendHeaders((details, callback) => {
+      const h = details.requestHeaders;
+      h['User-Agent']          = CHROME_UA;
+      h['sec-ch-ua']           = SEC_CH_UA;
+      h['sec-ch-ua-mobile']    = '?0';
+      h['sec-ch-ua-platform']  = '"Windows"';
+      delete h['Electron'];
+      callback({ requestHeaders: h });
+    });
+  }
+
+  // Handle popups from webviews (OAuth, Cloudflare challenges, etc.)
+  app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return;
+    contents.setWindowOpenHandler(({ url }) => {
+      // Open OAuth / external links in system browser
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  });
 }
 
 // ── Create window ──────────────────────────────────────────────────────────────
@@ -695,6 +734,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    setupWebviewSessions();
     registerIPC();
     createWindow();
     createTray();
