@@ -218,7 +218,7 @@ function createWindow() {
 
   // Push config to renderer once DOM ready
   win.webContents.on('did-finish-load', () => {
-    win.webContents.send('config-loaded', config);
+    win.webContents.send('config-loaded', { ...config, appVersion: app.getVersion() });
   });
 
   // Update checker — on launch + every 30 minutes
@@ -740,6 +740,10 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // Required for Windows system notifications to appear
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.respgpt.app');
+    }
     setupWebviewSessions();
     registerIPC();
     createWindow();

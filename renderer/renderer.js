@@ -185,6 +185,8 @@ R.onConfigLoaded(cfg => {
   aotToggle.checked      = cfg.alwaysOnTop !== false;
   startupToggle.checked  = !!cfg.startOnBoot;
 
+  if (cfg.appVersion) aboutVersion.textContent = 'v' + cfg.appVersion;
+
   activeSvc = 'chatgpt';
   switchTab('chatgpt', false);
 
@@ -939,5 +941,4 @@ R.onHotkey(data => {
   }
 });
 
-// ── About ──────────────────────────────────────────────────────────────────────
-aboutVersion.textContent = 'v1.1.0';
+// ── About — version is set dynamically from config-loaded ──────────────────────
