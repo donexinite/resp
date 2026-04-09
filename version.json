@@ -1,4 +1,4 @@
 {
-  "version": "1.2.7",
-  "notes": "Fix Google sign-in in WalterWrites, suppress passkey popup interrupting email typing."
+  "version": "1.2.8",
+  "notes": "Fully block WebAuthn/passkey — prevents Windows Security fingerprint dialog from appearing during sign-in."
 }

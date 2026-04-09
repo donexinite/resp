@@ -45,30 +45,48 @@ try { delete window.__electronData; } catch (_) {}
 try { delete window.process;        } catch (_) {}
 try { delete window.require;        } catch (_) {}
 
-// 6. Suppress passkey/WebAuthn conditional mediation (stops passkey popup
-//    from interrupting while user is typing their email address)
+// 6. Fully disable WebAuthn / passkey — prevents Windows Security fingerprint
+//    dialog from appearing at any point during sign-in flows
 try {
   if (window.PublicKeyCredential) {
-    window.PublicKeyCredential.isConditionalMediationAvailable =
-      () => Promise.resolve(false);
+    // Tell the page no platform authenticator exists
     window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable =
       () => Promise.resolve(false);
+    // Tell the page conditional mediation (autofill passkey) is unavailable
+    window.PublicKeyCredential.isConditionalMediationAvailable =
+      () => Promise.resolve(false);
+    // Stub the constructor so nothing can instantiate it
+    window.PublicKeyCredential = function () {
+      throw new DOMException('Not supported', 'NotSupportedError');
+    };
   }
 } catch (_) {}
 
-// 7. Prevent credential manager from auto-triggering passkey picker on input focus
+// 7. Block ALL credential requests that involve publicKey (WebAuthn/passkey)
+//    regardless of mediation mode — catches conditional, silent AND required
 try {
-  const _get = navigator.credentials?.get?.bind(navigator.credentials);
-  if (_get) {
-    Object.defineProperty(navigator.credentials, 'get', {
-      value: (opts) => {
-        // Block silent/conditional passkey requests; allow explicit user-triggered ones
-        if (opts?.mediation === 'conditional' || opts?.mediation === 'silent') {
-          return Promise.reject(new DOMException('Not allowed', 'NotAllowedError'));
-        }
-        return _get(opts);
+  const _credGet = navigator.credentials?.get?.bind(navigator.credentials);
+  const _credCreate = navigator.credentials?.create?.bind(navigator.credentials);
+  if (navigator.credentials && _credGet) {
+    Object.defineProperty(navigator, 'credentials', {
+      value: {
+        get: (opts) => {
+          if (opts?.publicKey || opts?.mediation === 'conditional' || opts?.mediation === 'silent') {
+            return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError'));
+          }
+          return _credGet(opts);
+        },
+        create: (opts) => {
+          if (opts?.publicKey) {
+            return Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError'));
+          }
+          return _credCreate ? _credCreate(opts) : Promise.reject(new DOMException('NotAllowedError', 'NotAllowedError'));
+        },
+        store:          () => Promise.resolve(),
+        preventSilentAccess: () => Promise.resolve(),
       },
       configurable: true,
+      writable: false,
     });
   }
 } catch (_) {}
