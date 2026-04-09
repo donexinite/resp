@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('respAPI', {
   onUpdateAvailable:    cb => ipcRenderer.on('update-available',    (_e, d) => cb(d)),
   onUpdateProgress:     cb => ipcRenderer.on('update-progress',     (_e, p) => cb(p)),
   onUpdateError:        cb => ipcRenderer.on('update-error',        (_e, m) => cb(m)),
-  onUpdateCheckResult:  cb => ipcRenderer.on('update-check-result', (_e, msg)  => cb(msg)),
+  onUpdateCheckResult:  cb => ipcRenderer.on('update-check-result', (_e, data) => cb(data)),
   onOldInstallsFound:   cb => ipcRenderer.on('old-installs-found',  (_e, dirs) => cb(dirs)),
   deleteOldInstalls:    dirs => ipcRenderer.send('delete-old-installs', dirs),
 });

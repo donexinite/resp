@@ -1,4 +1,4 @@
 {
-  "version": "1.2.2",
-  "notes": "Always open on ChatGPT tab on launch."
+  "version": "1.2.3",
+  "notes": "Fix check for updates button, 8s timeout on update requests, always opens on ChatGPT tab."
 }

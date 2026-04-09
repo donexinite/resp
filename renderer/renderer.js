@@ -726,8 +726,13 @@ startupToggle.addEventListener('change', () => {
 btnCenterPill.addEventListener('click', () => { R.centerPill(); showToast('Pill centered'); });
 btnResetPos  .addEventListener('click', () => { R.resetPosition(); showToast('Position reset'); });
 btnCheckUpdates.addEventListener('click', () => {
-  showToast('Checking for updates...');
+  btnCheckUpdates.textContent = 'Checking...';
+  btnCheckUpdates.disabled = true;
   R.checkUpdatesNow();
+  setTimeout(() => {
+    btnCheckUpdates.textContent = 'Check for Updates';
+    btnCheckUpdates.disabled = false;
+  }, 10000);
 });
 
 // ── Updates ────────────────────────────────────────────────────────────────────
@@ -758,7 +763,11 @@ R.onUpdateError(msg => {
   updateBar.classList.add('hidden');
   showToast('Update failed: ' + msg);
 });
-R.onUpdateCheckResult(msg => showToast(msg));
+R.onUpdateCheckResult(({ msg, manual }) => {
+  btnCheckUpdates.textContent = 'Check for Updates';
+  btnCheckUpdates.disabled = false;
+  if (manual) showToast(msg, 3500);
+});
 
 // ── Old-install cleanup ────────────────────────────────────────────────────────
 const cleanupModal   = $('cleanup-modal');

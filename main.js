@@ -597,9 +597,12 @@ ipcMain.on('delete-old-installs', (_e, dirs) => {
 
 // ── Auto-updater ───────────────────────────────────────────────────────────────
 function checkUpdates(manual = false) {
-  function notify(msg) { if (manual && win) win.webContents.send('update-check-result', msg); }
+  function notify(msg, isUpdate = false) {
+    if (!win) return;
+    win.webContents.send('update-check-result', { msg, isUpdate, manual });
+  }
 
-  https.get(UPDATE_URL + '/version.json', { headers: { 'User-Agent': 'RespGPT' } }, res => {
+  const req = https.get(UPDATE_URL + '/version.json', { headers: { 'User-Agent': 'RespGPT' } }, res => {
     let data = '';
     res.on('data', c => data += c);
     res.on('end', () => {
@@ -616,6 +619,7 @@ function checkUpdates(manual = false) {
             current: app.getVersion(),
             notes:   remote.notes || '',
           });
+          notify(`Update v${remote.version} available!`, true);
           // System notification so users see it even with panel closed
           if (Notification.isSupported()) {
             const n = new Notification({
@@ -629,9 +633,11 @@ function checkUpdates(manual = false) {
         } else {
           notify(`You're on the latest version (v${app.getVersion()})`);
         }
-      } catch (_) { notify('Could not parse update info'); }
+      } catch (_) { notify('Could not read update info'); }
     });
-  }).on('error', () => notify('No internet connection'));
+  });
+  req.on('error', () => notify('No internet connection'));
+  req.setTimeout(8000, () => { req.destroy(); notify('Update check timed out'); });
 }
 
 function downloadUpdate() {
