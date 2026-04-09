@@ -169,34 +169,86 @@ function setupWebviewSessions() {
     });
   }
 
-  // Handle popups from webviews (OAuth, Cloudflare challenges, etc.)
+  // Set up auth popup session (separate from webview partitions — looks like a real browser window)
+  const authSes = session.fromPartition('persist:auth-popup');
+  authSes.setPreloads([preloadScript]);
+  authSes.setUserAgent(CHROME_UA);
+  authSes.webRequest.onBeforeSendHeaders((details, callback) => {
+    const h = details.requestHeaders;
+    h['User-Agent']         = CHROME_UA;
+    h['sec-ch-ua']          = SEC_CH_UA;
+    h['sec-ch-ua-mobile']   = '?0';
+    h['sec-ch-ua-platform'] = '"Windows"';
+    delete h['Electron'];
+    callback({ requestHeaders: h });
+  });
+
+  // Handle webview navigations and popups
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return;
-    contents.setWindowOpenHandler(({ url }) => {
-      // OAuth/auth flows — open in a real Electron popup so the auth can complete
-      const isAuth = /accounts\.google\.com|facebook\.com\/dialog|auth\.|oauth|login|signin/i.test(url);
-      if (isAuth) {
-        return {
-          action: 'allow',
-          overrideBrowserWindowOptions: {
-            width:  520,
-            height: 640,
-            autoHideMenuBar: true,
-            title: 'Sign in',
-            webPreferences: {
-              nodeIntegration:  false,
-              contextIsolation: true,
-              // Reuse the walterw session — inherits anti-detection preload,
-              // spoofed user-agent and stripped Electron headers automatically
-              partition: 'persist:walterw',
-            },
-          },
-        };
+
+    // Intercept direct navigation to Google/Facebook auth WITHIN the webview
+    // (WalterWrites redirects the page itself rather than using window.open)
+    contents.on('will-navigate', (event, url) => {
+      if (/accounts\.google\.com|facebook\.com\/dialog\/oauth/i.test(url)) {
+        event.preventDefault();
+        openAuthPopup(url, contents);
       }
-      // Everything else — open in system browser
+    });
+
+    // Handle window.open() OAuth popups
+    contents.setWindowOpenHandler(({ url }) => {
+      const isAuth = /accounts\.google\.com|facebook\.com\/dialog|auth\.|oauth/i.test(url);
+      if (isAuth) {
+        openAuthPopup(url, contents);
+        return { action: 'deny' };
+      }
       shell.openExternal(url);
       return { action: 'deny' };
     });
+  });
+}
+
+// Opens a standalone BrowserWindow for OAuth so Google/Facebook see a real browser,
+// then relays the callback URL back into the originating webview.
+function openAuthPopup(authUrl, originContents) {
+  const popup = new BrowserWindow({
+    width:  520,
+    height: 680,
+    autoHideMenuBar: true,
+    title: 'Sign in',
+    webPreferences: {
+      nodeIntegration:  false,
+      contextIsolation: true,
+      partition: 'persist:auth-popup',
+    },
+  });
+
+  popup.loadURL(authUrl);
+
+  // Watch for redirect back to the originating service after auth completes
+  popup.webContents.on('will-navigate', (_e, url) => {
+    try {
+      const u = new URL(url);
+      // Any non-Google/Facebook URL = OAuth callback redirect
+      if (!/accounts\.google\.com|facebook\.com/i.test(u.hostname)) {
+        popup.close();
+        // Navigate the originating webview to the callback URL
+        if (!originContents.isDestroyed()) {
+          originContents.loadURL(url);
+        }
+      }
+    } catch (_) {}
+  });
+
+  popup.webContents.on('did-navigate', (_e, url) => {
+    try {
+      const u = new URL(url);
+      if (!/accounts\.google\.com|facebook\.com/i.test(u.hostname)) {
+        popup.close();
+        if (!originContents.isDestroyed()) originContents.loadURL(url);
+      }
+    } catch (_) {}
   });
 }
 
