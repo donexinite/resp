@@ -813,6 +813,34 @@ R.onUpdateCheckResult(({ msg, manual }) => {
   if (manual) showToast(msg, 3500);
 });
 
+// ── OAuth blocked notice ───────────────────────────────────────────────────────
+const oauthNotice       = $('oauth-notice');
+const oauthDismiss      = $('oauth-dismiss');
+const oauthOpenBrowser  = $('oauth-open-browser');
+let oauthTimer = null;
+
+R.onOAuthBlocked(() => {
+  oauthNotice.classList.remove('hidden');
+  if (oauthTimer) clearTimeout(oauthTimer);
+  oauthTimer = setTimeout(() => oauthNotice.classList.add('hidden'), 12000);
+});
+oauthDismiss.addEventListener('click', () => {
+  oauthNotice.classList.add('hidden');
+  if (oauthTimer) clearTimeout(oauthTimer);
+});
+oauthOpenBrowser.addEventListener('click', () => {
+  const urls = {
+    chatgpt:    'https://chat.openai.com',
+    claude:     'https://claude.ai',
+    gemini:     'https://gemini.google.com',
+    perplexity: 'https://www.perplexity.ai',
+    walterw:    'https://walterwrites.ai/login',
+  };
+  window.open(urls[activeSvc] || urls.walterw, '_blank');
+  oauthNotice.classList.add('hidden');
+  if (oauthTimer) clearTimeout(oauthTimer);
+});
+
 // ── Old-install cleanup ────────────────────────────────────────────────────────
 const cleanupModal   = $('cleanup-modal');
 const cleanupPaths   = $('cleanup-paths');

@@ -169,86 +169,48 @@ function setupWebviewSessions() {
     });
   }
 
-  // Set up auth popup session (separate from webview partitions — looks like a real browser window)
-  const authSes = session.fromPartition('persist:auth-popup');
-  authSes.setPreloads([preloadScript]);
-  authSes.setUserAgent(CHROME_UA);
-  authSes.webRequest.onBeforeSendHeaders((details, callback) => {
-    const h = details.requestHeaders;
-    h['User-Agent']         = CHROME_UA;
-    h['sec-ch-ua']          = SEC_CH_UA;
-    h['sec-ch-ua-mobile']   = '?0';
-    h['sec-ch-ua-platform'] = '"Windows"';
-    delete h['Electron'];
-    callback({ requestHeaders: h });
-  });
-
   // Handle webview navigations and popups
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return;
 
-    // Intercept direct navigation to Google/Facebook auth WITHIN the webview
-    // (WalterWrites redirects the page itself rather than using window.open)
+    // Intercept direct navigation to Google/Facebook auth WITHIN the webview.
+    // Google actively blocks ALL Electron-based windows (WebView AND BrowserWindow)
+    // via server-side TLS/browser fingerprinting. No amount of UA/header spoofing
+    // bypasses it. The only reliable approach: redirect back to the login page and
+    // tell the user to use email/password, or open the service in their real browser.
     contents.on('will-navigate', (event, url) => {
-      if (/accounts\.google\.com|facebook\.com\/dialog\/oauth/i.test(url)) {
+      if (/accounts\.google\.com\/o\/oauth|accounts\.google\.com\/signin|accounts\.google\.com\/v3|facebook\.com\/dialog\/oauth|facebook\.com\/login/i.test(url)) {
         event.preventDefault();
-        openAuthPopup(url, contents);
+        // Navigate webview back to the service's login page
+        const currentUrl = contents.getURL();
+        let loginUrl = 'https://walterwrites.ai/login';
+        if (/chatgpt|openai/i.test(currentUrl))       loginUrl = 'https://chat.openai.com/auth/login';
+        else if (/claude\.ai/i.test(currentUrl))       loginUrl = 'https://claude.ai/login';
+        else if (/gemini\.google/i.test(currentUrl))   loginUrl = 'https://gemini.google.com';
+        else if (/perplexity/i.test(currentUrl))       loginUrl = 'https://www.perplexity.ai';
+        contents.loadURL(loginUrl);
+        // Notify renderer to show a helpful message
+        if (win) win.webContents.send('oauth-blocked', { url });
       }
     });
 
-    // Handle window.open() OAuth popups
+    // Handle window.open() popups
     contents.setWindowOpenHandler(({ url }) => {
-      const isAuth = /accounts\.google\.com|facebook\.com\/dialog|auth\.|oauth/i.test(url);
-      if (isAuth) {
-        openAuthPopup(url, contents);
+      if (/accounts\.google\.com|facebook\.com\/dialog|facebook\.com\/login/i.test(url)) {
+        // Same thing — block and notify
+        const currentUrl = contents.getURL();
+        let loginUrl = 'https://walterwrites.ai/login';
+        if (/chatgpt|openai/i.test(currentUrl))       loginUrl = 'https://chat.openai.com/auth/login';
+        else if (/claude\.ai/i.test(currentUrl))       loginUrl = 'https://claude.ai/login';
+        else if (/gemini\.google/i.test(currentUrl))   loginUrl = 'https://gemini.google.com';
+        else if (/perplexity/i.test(currentUrl))       loginUrl = 'https://www.perplexity.ai';
+        contents.loadURL(loginUrl);
+        if (win) win.webContents.send('oauth-blocked', { url });
         return { action: 'deny' };
       }
       shell.openExternal(url);
       return { action: 'deny' };
     });
-  });
-}
-
-// Opens a standalone BrowserWindow for OAuth so Google/Facebook see a real browser,
-// then relays the callback URL back into the originating webview.
-function openAuthPopup(authUrl, originContents) {
-  const popup = new BrowserWindow({
-    width:  520,
-    height: 680,
-    autoHideMenuBar: true,
-    title: 'Sign in',
-    webPreferences: {
-      nodeIntegration:  false,
-      contextIsolation: true,
-      partition: 'persist:auth-popup',
-    },
-  });
-
-  popup.loadURL(authUrl);
-
-  // Watch for redirect back to the originating service after auth completes
-  popup.webContents.on('will-navigate', (_e, url) => {
-    try {
-      const u = new URL(url);
-      // Any non-Google/Facebook URL = OAuth callback redirect
-      if (!/accounts\.google\.com|facebook\.com/i.test(u.hostname)) {
-        popup.close();
-        // Navigate the originating webview to the callback URL
-        if (!originContents.isDestroyed()) {
-          originContents.loadURL(url);
-        }
-      }
-    } catch (_) {}
-  });
-
-  popup.webContents.on('did-navigate', (_e, url) => {
-    try {
-      const u = new URL(url);
-      if (!/accounts\.google\.com|facebook\.com/i.test(u.hostname)) {
-        popup.close();
-        if (!originContents.isDestroyed()) originContents.loadURL(url);
-      }
-    } catch (_) {}
   });
 }
 
