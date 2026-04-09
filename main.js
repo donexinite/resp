@@ -221,8 +221,9 @@ function createWindow() {
     win.webContents.send('config-loaded', { ...config, appVersion: app.getVersion() });
   });
 
-  // Update checker — on launch + every 30 minutes
-  setTimeout(checkUpdates, 4000);
+  // Update checker — skip on first launch after an update, then every 30 minutes
+  const justUpdated = process.argv.includes('--just-updated');
+  if (!justUpdated) setTimeout(checkUpdates, 4000);
   setInterval(checkUpdates, 30 * 60 * 1000);
 
   // Old-install cleanup prompt (first launch only)
@@ -673,7 +674,7 @@ function downloadUpdate() {
             '@echo off',
             'timeout /t 2 /nobreak >nul',
             'copy /y "' + tmpPath + '" "' + asarPath + '"',
-            'start "" "' + process.execPath + '"',
+            'start "" "' + process.execPath + '" --just-updated',
             'del "%~f0"',
           ].join('\r\n');
           fs.writeFileSync(batPath, bat, 'utf8');
