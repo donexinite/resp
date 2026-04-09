@@ -1,4 +1,4 @@
 {
-  "version": "1.2.8",
-  "notes": "Fully block WebAuthn/passkey — prevents Windows Security fingerprint dialog from appearing during sign-in."
+  "version": "1.2.9",
+  "notes": "Minor stability improvements."
 }
