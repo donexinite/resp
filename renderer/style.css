@@ -211,6 +211,9 @@ html, body {
 .tab[data-service="chatgpt"].active::after    { background: var(--chatgpt); }
 .tab[data-service="claude"].active::after     { background: var(--claude); }
 .tab[data-service="gemini"].active::after     { background: var(--gemini); }
+
+/* Dim active tab underline when a panel is covering the webview */
+#tabs.panel-active .tab.active::after { opacity: 0.25; }
 .tab[data-service="perplexity"].active::after { background: var(--perplexity); }
 .tab[data-service="walterw"].active::after    { background: var(--walterw); }
 

@@ -173,7 +173,20 @@ function setupWebviewSessions() {
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return;
     contents.setWindowOpenHandler(({ url }) => {
-      // Open OAuth / external links in system browser
+      // OAuth/auth flows — open in a real Electron popup so the auth can complete
+      const isAuth = /accounts\.google\.com|facebook\.com\/dialog|auth\.|oauth|login|signin/i.test(url);
+      if (isAuth) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 520, height: 640,
+            webPreferences: { nodeIntegration: false, contextIsolation: true },
+            autoHideMenuBar: true,
+            title: 'Sign in',
+          },
+        };
+      }
+      // Everything else — open in system browser
       shell.openExternal(url);
       return { action: 'deny' };
     });

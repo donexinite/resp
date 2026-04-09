@@ -1,4 +1,4 @@
 {
-  "version": "1.2.5",
-  "notes": "Fix repeated update prompt after installing — app no longer re-checks immediately after an update relaunch."
+  "version": "1.2.6",
+  "notes": "AI tab clicks close open panels, back button for webview navigation, OAuth popups work correctly, panel state restored after collapse/expand, tab underline dims when panel is open."
 }

@@ -203,11 +203,25 @@ R.onConfigLoaded(cfg => {
 });
 
 // ── Expand / Collapse ──────────────────────────────────────────────────────────
+let lastOpenPanel = null; // remember which panel was open when collapsing
+
 function expand()   { panel.classList.remove('hidden'); R.toggle(); }
 function collapse() { R.toggle(); }
 
-R.onExpanded(() => { isExpanded = true;  panel.classList.remove('hidden'); });
+R.onExpanded(() => {
+  isExpanded = true;
+  panel.classList.remove('hidden');
+  // Restore panel that was open before collapse
+  if (lastOpenPanel === 'settings')    { openSettings(true);      lastOpenPanel = null; }
+  else if (lastOpenPanel === 'tpl')    { openTemplates(true);     lastOpenPanel = null; }
+  else if (lastOpenPanel === 'tp')     { openTeleprompter(true);  lastOpenPanel = null; }
+});
 R.onCollapsed(() => {
+  // Remember which panel was open
+  if (settingsOpen) lastOpenPanel = 'settings';
+  else if (tplOpen) lastOpenPanel = 'tpl';
+  else if (tpOpen)  lastOpenPanel = 'tp';
+  else              lastOpenPanel = null;
   isExpanded = false;
   panel.classList.add('hidden');
   closeAllPanels();
@@ -312,6 +326,8 @@ window.addEventListener('mouseup', e => {
 // ── Tabs ───────────────────────────────────────────────────────────────────────
 function switchTab(svc, persist = true) {
   if (!wv[svc]) return;
+  // Close any open panel so the webview is visible
+  closeAllPanels();
   document.querySelectorAll('.tab').forEach(t => {
     t.classList.toggle('active', t.dataset.service === svc);
   });
@@ -319,9 +335,34 @@ function switchTab(svc, persist = true) {
   activeSvc = svc;
   pill.dataset.service = svc;
   if (persist) R.setActiveTab(svc);
+  updateTabsState();
 }
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.service));
+});
+
+// Dim tab underlines when a panel covers the webview area
+function updateTabsState() {
+  const panelCovering = tpOpen || tplOpen || settingsOpen;
+  document.getElementById('tabs').classList.toggle('panel-active', panelCovering);
+}
+
+// ── Back navigation ────────────────────────────────────────────────────────────
+const btnBack = $('btn-back');
+function updateBackBtn() {
+  try {
+    const canGo = wv[activeSvc] && wv[activeSvc].canGoBack();
+    btnBack.style.opacity = canGo ? '1' : '0.3';
+    btnBack.style.pointerEvents = canGo ? '' : 'none';
+  } catch (_) {}
+}
+btnBack.addEventListener('click', () => {
+  try { if (wv[activeSvc]) wv[activeSvc].goBack(); } catch (_) {}
+});
+// Update back button state after navigation
+Object.values(wv).forEach(webview => {
+  webview.addEventListener('did-navigate', updateBackBtn);
+  webview.addEventListener('did-navigate-in-page', updateBackBtn);
 });
 
 // ── Reload & zoom ──────────────────────────────────────────────────────────────
@@ -496,6 +537,7 @@ function closeAllPanels() {
 function updateWebviewVisibility() {
   const hideWebviews = tpOpen || tplOpen || settingsOpen;
   webviewsDiv.classList.toggle('hidden', hideWebviews);
+  updateTabsState();
 }
 
 // ── Auto-type ──────────────────────────────────────────────────────────────────
