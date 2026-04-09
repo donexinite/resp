@@ -179,10 +179,17 @@ function setupWebviewSessions() {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            width: 520, height: 640,
-            webPreferences: { nodeIntegration: false, contextIsolation: true },
+            width:  520,
+            height: 640,
             autoHideMenuBar: true,
             title: 'Sign in',
+            webPreferences: {
+              nodeIntegration:  false,
+              contextIsolation: true,
+              // Reuse the walterw session — inherits anti-detection preload,
+              // spoofed user-agent and stripped Electron headers automatically
+              partition: 'persist:walterw',
+            },
           },
         };
       }
