@@ -829,76 +829,69 @@ input:checked + .sw-slider::before { transform: translateX(16px); background: #f
   background: var(--bg2);
   border: 1px solid var(--b2);
   border-radius: 14px;
-  padding: 18px 22px;
+  padding: 20px 22px;
   box-shadow: 0 16px 48px rgba(0,0,0,0.7);
-  width: 380px;
+  width: 360px;
   max-width: calc(100vw - 40px);
   text-align: center;
 }
-#oauth-notice-icon { margin-bottom: 10px; }
+#oauth-notice-icon, #oauth-waiting-icon { margin-bottom: 10px; }
 #oauth-notice-text {
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--t0);
-  line-height: 1.6;
-  margin: 0 0 12px;
-}
-#oauth-steps {
-  text-align: left;
-  margin: 0 0 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.oauth-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 11.5px;
-  color: var(--t1);
   line-height: 1.5;
+  margin: 0 0 6px;
 }
-.oauth-step-num {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--accent-dim);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+#oauth-notice-sub, #oauth-waiting-hint {
+  font-size: 11.5px;
+  color: var(--t2);
+  line-height: 1.6;
+  margin: 0 0 16px;
 }
-#oauth-notice-actions {
+#oauth-waiting-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t0);
+  line-height: 1.5;
+  margin: 0 0 6px;
+}
+#oauth-notice-actions, #oauth-waiting-actions {
   display: flex;
   gap: 8px;
   justify-content: center;
 }
-#oauth-open-browser {
-  padding: 7px 16px;
-  background: transparent;
-  border: 1px solid var(--b2);
-  border-radius: 8px;
-  color: var(--t2);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 150ms, color 150ms;
-}
-#oauth-open-browser:hover { background: var(--bg3); color: var(--t0); }
-#oauth-dismiss {
-  padding: 7px 16px;
+#oauth-browser-login, #oauth-transfer {
+  padding: 8px 18px;
   background: var(--accent);
   border: none;
   border-radius: 8px;
   color: #fff;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 150ms;
+  transition: opacity 150ms;
 }
-#oauth-dismiss:hover { opacity: 0.85; }
+#oauth-browser-login:hover, #oauth-transfer:hover { opacity: 0.85; }
+#oauth-browser-login:disabled, #oauth-transfer:disabled { opacity: 0.45; cursor: not-allowed; }
+#oauth-dismiss, #oauth-cancel-login {
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--b2);
+  border-radius: 8px;
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+#oauth-dismiss:hover, #oauth-cancel-login:hover { background: var(--bg3); color: var(--t0); }
+#oauth-transfer-result {
+  font-size: 11.5px;
+  margin: 10px 0 0;
+  color: var(--green);
+}
+#oauth-transfer-result.error { color: var(--red); }
 
 /* ═══════════════════ Cleanup Modal ═══════════════════ */
 #cleanup-modal {

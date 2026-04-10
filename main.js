@@ -7,7 +7,10 @@ const {
 const path  = require('path');
 const os    = require('os');
 const fs    = require('fs');
-const https = require('https');
+const http   = require('http');
+const https  = require('https');
+const net    = require('net');
+const crypto = require('crypto');
 const { exec, spawn } = require('child_process');
 
 // ── Error handling ─────────────────────────────────────────────────────────────
@@ -496,6 +499,10 @@ function registerIPC() {
 
   // ── Updates on demand ──
   ipcMain.on('check-updates-now', () => checkUpdates(true));
+
+  // ── Browser-based login ──
+  ipcMain.handle('browser-login',        (_e, svc) => launchBrowserLogin(svc));
+  ipcMain.handle('finish-browser-login', (_e, svc) => finishBrowserLogin(svc));
 }
 
 // ── Mini toggle ────────────────────────────────────────────────────────────────
@@ -629,6 +636,201 @@ ipcMain.on('delete-old-installs', (_e, dirs) => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
   }
 });
+
+// ── Browser-based login (cookie transfer from real Chrome/Edge) ──────────────
+// Google blocks OAuth inside Electron. This opens the user's real browser,
+// lets them log in with Google there, then extracts the session cookies via
+// Chrome DevTools Protocol and injects them into the webview's session.
+
+const LOGIN_URLS = {
+  chatgpt:    'https://chat.openai.com/auth/login',
+  claude:     'https://claude.ai/login',
+  gemini:     'https://gemini.google.com',
+  perplexity: 'https://www.perplexity.ai',
+  walterw:    'https://walterwrites.ai/login',
+};
+const PARTITION_MAP = {
+  chatgpt: 'persist:chatgpt', claude: 'persist:claude', gemini: 'persist:gemini',
+  perplexity: 'persist:perplexity', walterw: 'persist:walterw',
+};
+
+let _loginProc = null;
+let _loginPort = null;
+let _loginTmpDir = null;
+
+function findSystemBrowser() {
+  const vars = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean);
+  const names = [
+    ['Microsoft', 'Edge', 'Application', 'msedge.exe'],
+    ['Google', 'Chrome', 'Application', 'chrome.exe'],
+  ];
+  for (const segs of names) {
+    for (const base of vars) {
+      const p = path.join(base, ...segs);
+      try { fs.accessSync(p); return p; } catch (_) {}
+    }
+  }
+  return null;
+}
+
+async function launchBrowserLogin(service) {
+  const browser = findSystemBrowser();
+  if (!browser) return { ok: false, error: 'No Chrome or Edge found on this PC' };
+
+  const port   = 19200 + Math.floor(Math.random() * 800);
+  const tmpDir = path.join(os.tmpdir(), 'respgpt-login-' + Date.now());
+  const url    = LOGIN_URLS[service] || LOGIN_URLS.walterw;
+
+  if (_loginProc) try { _loginProc.kill(); } catch (_) {}
+
+  _loginProc = spawn(browser, [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${tmpDir}`,
+    '--no-first-run', '--no-default-browser-check', '--disable-sync',
+    url,
+  ], { detached: false, stdio: 'ignore' });
+
+  _loginPort   = port;
+  _loginTmpDir = tmpDir;
+
+  _loginProc.on('exit', () => {
+    _loginProc = null;
+    _loginPort = null;
+    setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} }, 2000);
+  });
+
+  return { ok: true };
+}
+
+async function finishBrowserLogin(service) {
+  if (!_loginPort) return { ok: false, error: 'No browser login in progress' };
+
+  try {
+    const cookies = await cdpGetAllCookies(_loginPort);
+    if (!cookies || cookies.length === 0) return { ok: false, error: 'No cookies found — make sure you completed sign-in' };
+
+    const ses     = session.fromPartition(PARTITION_MAP[service] || PARTITION_MAP.walterw);
+    let injected  = 0;
+
+    for (const c of cookies) {
+      try {
+        const domain  = (c.domain || '').replace(/^\./, '');
+        const url     = `${c.secure ? 'https' : 'http'}://${domain}${c.path || '/'}`;
+        const details = { url, name: c.name, value: c.value, path: c.path || '/' };
+        if (c.domain)   details.domain   = c.domain;
+        if (c.secure)   details.secure   = true;
+        if (c.httpOnly) details.httpOnly  = true;
+        if (c.expires && c.expires > 0) details.expirationDate = c.expires;
+        details.sameSite = (c.sameSite || '').toLowerCase() === 'none' ? 'no_restriction'
+          : (c.sameSite || '').toLowerCase() === 'strict' ? 'strict' : 'lax';
+        await ses.cookies.set(details);
+        injected++;
+      } catch (_) {}
+    }
+
+    // Kill browser & clean up
+    if (_loginProc) try { _loginProc.kill(); } catch (_) {}
+
+    return { ok: true, injected };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Cookie extraction failed' };
+  }
+}
+
+// ── Minimal CDP client (raw WebSocket over TCP) ─────────────────────────────
+function cdpGetAllCookies(port) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('CDP timeout')), 8000);
+    http.get(`http://127.0.0.1:${port}/json/version`, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const wsUrl = JSON.parse(d).webSocketDebuggerUrl;
+          if (!wsUrl) { clearTimeout(timer); return reject(new Error('No debugger URL')); }
+          cdpWsSend(wsUrl, 'Network.getAllCookies', {}).then(r => {
+            clearTimeout(timer); resolve(r.cookies || []);
+          }).catch(e => { clearTimeout(timer); reject(e); });
+        } catch (e) { clearTimeout(timer); reject(e); }
+      });
+    }).on('error', e => { clearTimeout(timer); reject(e); });
+  });
+}
+
+function cdpWsSend(wsUrl, method, params) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(wsUrl);
+    const key = crypto.randomBytes(16).toString('base64');
+    const socket = net.createConnection({ port: parseInt(url.port), host: '127.0.0.1' }, () => {
+      socket.write(
+        `GET ${url.pathname} HTTP/1.1\r\nHost: 127.0.0.1:${url.port}\r\n` +
+        `Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\n` +
+        `Sec-WebSocket-Version: 13\r\n\r\n`
+      );
+    });
+
+    let upgraded = false, buf = Buffer.alloc(0);
+
+    socket.on('data', chunk => {
+      buf = Buffer.concat([buf, chunk]);
+
+      if (!upgraded) {
+        const idx = buf.indexOf('\r\n\r\n');
+        if (idx === -1) return;
+        if (!buf.slice(0, idx).toString().includes('101')) { socket.destroy(); return reject(new Error('WS upgrade failed')); }
+        buf = buf.slice(idx + 4);
+        upgraded = true;
+        const payload = Buffer.from(JSON.stringify({ id: 1, method, params }));
+        const mask = crypto.randomBytes(4);
+        let hdr;
+        if (payload.length < 126) {
+          hdr = Buffer.alloc(6); hdr[0] = 0x81; hdr[1] = 0x80 | payload.length; mask.copy(hdr, 2);
+        } else if (payload.length < 65536) {
+          hdr = Buffer.alloc(8); hdr[0] = 0x81; hdr[1] = 0x80 | 126; hdr.writeUInt16BE(payload.length, 2); mask.copy(hdr, 4);
+        } else {
+          hdr = Buffer.alloc(14); hdr[0] = 0x81; hdr[1] = 0x80 | 127; hdr.writeUInt32BE(0, 2); hdr.writeUInt32BE(payload.length, 6); mask.copy(hdr, 10);
+        }
+        const masked = Buffer.alloc(payload.length);
+        for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
+        socket.write(Buffer.concat([hdr, masked]));
+      }
+
+      if (upgraded) {
+        const msg = wsParseFrame(buf);
+        if (msg) {
+          buf = msg.rest;
+          try {
+            const obj = JSON.parse(msg.data);
+            if (obj.id === 1) { socket.destroy(); return obj.error ? reject(new Error(obj.error.message)) : resolve(obj.result); }
+          } catch (_) {}
+        }
+      }
+    });
+    socket.on('error', reject);
+    socket.setTimeout(6000, () => { socket.destroy(); reject(new Error('Socket timeout')); });
+  });
+}
+
+function wsParseFrame(buf) {
+  if (buf.length < 2) return null;
+  const masked = (buf[1] & 0x80) !== 0;
+  let len = buf[1] & 0x7f, off = 2;
+  if (len === 126) { if (buf.length < 4) return null; len = buf.readUInt16BE(2); off = 4; }
+  else if (len === 127) { if (buf.length < 10) return null; len = buf.readUInt32BE(2) * 0x100000000 + buf.readUInt32BE(6); off = 10; }
+  if (masked) off += 4;
+  if (buf.length < off + len) return null;
+  let data;
+  if (masked) {
+    const mk = buf.slice(off - 4, off);
+    const raw = buf.slice(off, off + len);
+    const out = Buffer.alloc(len);
+    for (let i = 0; i < len; i++) out[i] = raw[i] ^ mk[i % 4];
+    data = out.toString('utf8');
+  } else {
+    data = buf.slice(off, off + len).toString('utf8');
+  }
+  return { data, rest: buf.slice(off + len) };
+}
 
 // ── Auto-updater ───────────────────────────────────────────────────────────────
 function checkUpdates(manual = false) {

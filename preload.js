@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('respAPI', {
   dismissUpdate:    v               => ipcRenderer.send('dismiss-update', v),
   checkUpdatesNow:  ()              => ipcRenderer.send('check-updates-now'),
 
+  // ── Browser login ──
+  browserLogin:       svc           => ipcRenderer.invoke('browser-login', svc),
+  finishBrowserLogin: svc           => ipcRenderer.invoke('finish-browser-login', svc),
+
   // ── Listeners ──
   onHotkey:          cb => ipcRenderer.on('hotkey',           (_e, d) => cb(d)),
   onConfigLoaded:    cb => ipcRenderer.on('config-loaded',    (_e, c) => cb(c)),

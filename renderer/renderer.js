@@ -815,28 +815,64 @@ R.onUpdateCheckResult(({ msg, manual }) => {
 
 // ── OAuth blocked notice ───────────────────────────────────────────────────────
 const oauthNotice       = $('oauth-notice');
+const oauthInitial      = $('oauth-initial');
+const oauthWaiting      = $('oauth-waiting');
 const oauthDismiss      = $('oauth-dismiss');
-const oauthOpenBrowser  = $('oauth-open-browser');
-let oauthTimer = null;
+const oauthCancelLogin  = $('oauth-cancel-login');
+const oauthBrowserLogin = $('oauth-browser-login');
+const oauthTransfer     = $('oauth-transfer');
 
-R.onOAuthBlocked(() => {
+function showOAuthInitial() {
+  oauthInitial.classList.remove('hidden');
+  oauthWaiting.classList.add('hidden');
   oauthNotice.classList.remove('hidden');
-});
-oauthDismiss.addEventListener('click', () => {
+}
+function hideOAuth() {
   oauthNotice.classList.add('hidden');
-  if (oauthTimer) clearTimeout(oauthTimer);
+  oauthInitial.classList.remove('hidden');
+  oauthWaiting.classList.add('hidden');
+  oauthTransfer.disabled = false;
+  oauthTransfer.textContent = 'Transfer my login';
+}
+
+R.onOAuthBlocked(() => showOAuthInitial());
+
+oauthDismiss.addEventListener('click', hideOAuth);
+oauthCancelLogin.addEventListener('click', hideOAuth);
+
+oauthBrowserLogin.addEventListener('click', async () => {
+  oauthBrowserLogin.disabled = true;
+  oauthBrowserLogin.textContent = 'Opening browser…';
+  const res = await R.browserLogin(activeSvc);
+  oauthBrowserLogin.disabled = false;
+  oauthBrowserLogin.textContent = 'Sign in with browser';
+  if (!res.ok) {
+    showToast(res.error || 'Could not open browser', 4000);
+    return;
+  }
+  // Switch to waiting state
+  oauthInitial.classList.add('hidden');
+  oauthWaiting.classList.remove('hidden');
 });
-oauthOpenBrowser.addEventListener('click', () => {
-  const urls = {
-    chatgpt:    'https://chat.openai.com',
-    claude:     'https://claude.ai',
-    gemini:     'https://gemini.google.com',
-    perplexity: 'https://www.perplexity.ai',
-    walterw:    'https://walterwrites.ai/login',
-  };
-  window.open(urls[activeSvc] || urls.walterw, '_blank');
-  oauthNotice.classList.add('hidden');
-  if (oauthTimer) clearTimeout(oauthTimer);
+
+oauthTransfer.addEventListener('click', async () => {
+  oauthTransfer.disabled = true;
+  oauthTransfer.textContent = 'Transferring…';
+
+  const res = await R.finishBrowserLogin(activeSvc);
+
+  if (res.ok) {
+    hideOAuth();
+    showToast('Logged in! Reloading…', 2500);
+    setTimeout(() => {
+      const wv = document.querySelector(`webview[id="wv-${activeSvc}"]`);
+      if (wv) wv.reload();
+    }, 1200);
+  } else {
+    oauthTransfer.disabled = false;
+    oauthTransfer.textContent = 'Transfer my login';
+    showToast(res.error || 'Transfer failed — make sure you finished signing in', 5000);
+  }
 });
 
 // ── Old-install cleanup ────────────────────────────────────────────────────────
