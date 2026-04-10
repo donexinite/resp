@@ -9,8 +9,6 @@ const os    = require('os');
 const fs    = require('fs');
 const http   = require('http');
 const https  = require('https');
-const net    = require('net');
-const crypto = require('crypto');
 const { exec, spawn } = require('child_process');
 
 // ── Error handling ─────────────────────────────────────────────────────────────
@@ -712,20 +710,8 @@ function cdpListPages(port) {
 }
 
 async function injectCookies(service, port) {
-  // Use a page-level target — browser-level CDP doesn't expose Network.getAllCookies reliably
-  const pages = await cdpListPages(port);
-  const domains = SERVICE_DOMAINS[service] || SERVICE_DOMAINS.walterw;
-
-  // Prefer a page on the service domain; otherwise use any debuggable page
-  const target = pages.find(p => p.webSocketDebuggerUrl && domains.some(d => (p.url || '').includes(d)))
-    || pages.find(p => p.webSocketDebuggerUrl && p.type === 'page')
-    || pages.find(p => p.webSocketDebuggerUrl);
-
-  if (!target || !target.webSocketDebuggerUrl) throw new Error('No debuggable page found');
-
-  const result = await cdpWsSend(target.webSocketDebuggerUrl, 'Network.getAllCookies', {});
-  const cookies = result.cookies || [];
-  if (!cookies.length) return 0;
+  const cookies = await cdpGetCookiesViaRenderer(port);
+  if (!cookies || cookies.length === 0) return 0;
 
   const ses = session.fromPartition(PARTITION_MAP[service] || PARTITION_MAP.walterw);
   let injected = 0;
@@ -818,99 +804,70 @@ function startLoginPoll(service, port) {
   }, 2000);
 }
 
-// ── Minimal CDP client (raw WebSocket over TCP) ─────────────────────────────
-function cdpGetAllCookies(port) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('CDP timeout')), 8000);
-    http.get(`http://127.0.0.1:${port}/json/version`, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const wsUrl = JSON.parse(d).webSocketDebuggerUrl;
-          if (!wsUrl) { clearTimeout(timer); return reject(new Error('No debugger URL')); }
-          cdpWsSend(wsUrl, 'Network.getAllCookies', {}).then(r => {
-            clearTimeout(timer); resolve(r.cookies || []);
-          }).catch(e => { clearTimeout(timer); reject(e); });
-        } catch (e) { clearTimeout(timer); reject(e); }
-      });
-    }).on('error', e => { clearTimeout(timer); reject(e); });
-  });
-}
+// ── CDP cookie extraction via hidden BrowserWindow ───────────────────────────
+// Previous approach used a custom TCP WebSocket parser which broke on large
+// fragmented responses. This uses Chromium's native WebSocket — 100% reliable.
+async function cdpGetCookiesViaRenderer(port) {
+  // Find a debuggable page target
+  const pages = await cdpListPages(port);
+  const target = pages.find(p => p.webSocketDebuggerUrl && p.type === 'page')
+    || pages.find(p => p.webSocketDebuggerUrl);
 
-function cdpWsSend(wsUrl, method, params) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(wsUrl);
-    const key = crypto.randomBytes(16).toString('base64');
-    const socket = net.createConnection({ port: parseInt(url.port), host: '127.0.0.1' }, () => {
-      socket.write(
-        `GET ${url.pathname} HTTP/1.1\r\nHost: 127.0.0.1:${url.port}\r\n` +
-        `Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\n` +
-        `Sec-WebSocket-Version: 13\r\n\r\n`
-      );
-    });
-
-    let upgraded = false, buf = Buffer.alloc(0);
-
-    socket.on('data', chunk => {
-      buf = Buffer.concat([buf, chunk]);
-
-      if (!upgraded) {
-        const idx = buf.indexOf('\r\n\r\n');
-        if (idx === -1) return;
-        if (!buf.slice(0, idx).toString().includes('101')) { socket.destroy(); return reject(new Error('WS upgrade failed')); }
-        buf = buf.slice(idx + 4);
-        upgraded = true;
-        const payload = Buffer.from(JSON.stringify({ id: 1, method, params }));
-        const mask = crypto.randomBytes(4);
-        let hdr;
-        if (payload.length < 126) {
-          hdr = Buffer.alloc(6); hdr[0] = 0x81; hdr[1] = 0x80 | payload.length; mask.copy(hdr, 2);
-        } else if (payload.length < 65536) {
-          hdr = Buffer.alloc(8); hdr[0] = 0x81; hdr[1] = 0x80 | 126; hdr.writeUInt16BE(payload.length, 2); mask.copy(hdr, 4);
-        } else {
-          hdr = Buffer.alloc(14); hdr[0] = 0x81; hdr[1] = 0x80 | 127; hdr.writeUInt32BE(0, 2); hdr.writeUInt32BE(payload.length, 6); mask.copy(hdr, 10);
-        }
-        const masked = Buffer.alloc(payload.length);
-        for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
-        socket.write(Buffer.concat([hdr, masked]));
-      }
-
-      if (upgraded) {
-        const msg = wsParseFrame(buf);
-        if (msg) {
-          buf = msg.rest;
-          try {
-            const obj = JSON.parse(msg.data);
-            if (obj.id === 1) { socket.destroy(); return obj.error ? reject(new Error(obj.error.message)) : resolve(obj.result); }
-          } catch (_) {}
-        }
-      }
-    });
-    socket.on('error', reject);
-    socket.setTimeout(6000, () => { socket.destroy(); reject(new Error('Socket timeout')); });
-  });
-}
-
-function wsParseFrame(buf) {
-  if (buf.length < 2) return null;
-  const masked = (buf[1] & 0x80) !== 0;
-  let len = buf[1] & 0x7f, off = 2;
-  if (len === 126) { if (buf.length < 4) return null; len = buf.readUInt16BE(2); off = 4; }
-  else if (len === 127) { if (buf.length < 10) return null; len = buf.readUInt32BE(2) * 0x100000000 + buf.readUInt32BE(6); off = 10; }
-  if (masked) off += 4;
-  if (buf.length < off + len) return null;
-  let data;
-  if (masked) {
-    const mk = buf.slice(off - 4, off);
-    const raw = buf.slice(off, off + len);
-    const out = Buffer.alloc(len);
-    for (let i = 0; i < len; i++) out[i] = raw[i] ^ mk[i % 4];
-    data = out.toString('utf8');
+  let wsUrl;
+  if (target && target.webSocketDebuggerUrl) {
+    wsUrl = target.webSocketDebuggerUrl;
   } else {
-    data = buf.slice(off, off + len).toString('utf8');
+    // Fall back to browser-level target
+    wsUrl = await new Promise((res, rej) => {
+      http.get(`http://127.0.0.1:${port}/json/version`, r => {
+        let d = ''; r.on('data', c => d += c);
+        r.on('end', () => { try { res(JSON.parse(d).webSocketDebuggerUrl); } catch (e) { rej(e); } });
+      }).on('error', rej);
+    });
+    if (!wsUrl) throw new Error('No debugger target found');
   }
-  return { data, rest: buf.slice(off + len) };
+
+  // Spin up a hidden BrowserWindow and use its native WebSocket to talk CDP.
+  // This avoids every fragmentation/parsing bug of a hand-rolled WS client.
+  const hw = new BrowserWindow({
+    show: false, width: 1, height: 1,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false, webSecurity: false },
+  });
+
+  try {
+    await new Promise((res, rej) => {
+      hw.webContents.once('did-finish-load', res);
+      hw.webContents.once('did-fail-load', rej);
+      hw.loadURL('about:blank');
+    });
+
+    const cookies = await hw.webContents.executeJavaScript(`
+      new Promise(function(resolve, reject) {
+        var ws = new WebSocket(${JSON.stringify(wsUrl)});
+        ws.onopen = function() {
+          ws.send(JSON.stringify({ id: 1, method: 'Network.getAllCookies', params: {} }));
+        };
+        ws.onmessage = function(e) {
+          try {
+            var msg = JSON.parse(e.data);
+            if (msg.id === 1) {
+              ws.close();
+              if (msg.error) reject(new Error(msg.error.message));
+              else resolve(msg.result && msg.result.cookies ? msg.result.cookies : []);
+            }
+          } catch(_) {}
+        };
+        ws.onerror = function() { reject(new Error('WebSocket failed')); };
+        setTimeout(function() { ws.close(); reject(new Error('Timeout')); }, 10000);
+      })
+    `, true);
+
+    hw.destroy();
+    return cookies;
+  } catch (e) {
+    if (!hw.isDestroyed()) hw.destroy();
+    throw e;
+  }
 }
 
 // ── Auto-updater ───────────────────────────────────────────────────────────────
