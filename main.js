@@ -176,39 +176,30 @@ function setupWebviewSessions() {
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return;
 
-    // Intercept direct navigation to Google/Facebook auth WITHIN the webview.
-    // Google actively blocks ALL Electron-based windows (WebView AND BrowserWindow)
-    // via server-side TLS/browser fingerprinting. No amount of UA/header spoofing
-    // bypasses it. The only reliable approach: redirect back to the login page and
-    // tell the user to use email/password, or open the service in their real browser.
+    // Intercept Google/Facebook OAuth navigations — launch a real browser popup
+    // that handles the OAuth properly, then auto-transfer cookies back.
+    const triggerBrowserLogin = (url) => {
+      const service = getServiceFromContents(contents);
+      launchBrowserLogin(service).then(result => {
+        if (!win) return;
+        if (result.ok) {
+          win.webContents.send('browser-login-started', { service });
+        } else {
+          win.webContents.send('oauth-blocked', { url, error: result.error });
+        }
+      });
+    };
+
     contents.on('will-navigate', (event, url) => {
-      if (/accounts\.google\.com\/o\/oauth|accounts\.google\.com\/signin|accounts\.google\.com\/v3|facebook\.com\/dialog\/oauth|facebook\.com\/login/i.test(url)) {
+      if (/accounts\.google\.com.*(?:oauth|signin|v3)|facebook\.com\/(?:dialog\/oauth|login)/i.test(url)) {
         event.preventDefault();
-        // Navigate webview back to the service's login page
-        const currentUrl = contents.getURL();
-        let loginUrl = 'https://walterwrites.ai/login';
-        if (/chatgpt|openai/i.test(currentUrl))       loginUrl = 'https://chat.openai.com/auth/login';
-        else if (/claude\.ai/i.test(currentUrl))       loginUrl = 'https://claude.ai/login';
-        else if (/gemini\.google/i.test(currentUrl))   loginUrl = 'https://gemini.google.com';
-        else if (/perplexity/i.test(currentUrl))       loginUrl = 'https://www.perplexity.ai';
-        contents.loadURL(loginUrl);
-        // Notify renderer to show a helpful message
-        if (win) win.webContents.send('oauth-blocked', { url });
+        triggerBrowserLogin(url);
       }
     });
 
-    // Handle window.open() popups
     contents.setWindowOpenHandler(({ url }) => {
-      if (/accounts\.google\.com|facebook\.com\/dialog|facebook\.com\/login/i.test(url)) {
-        // Same thing — block and notify
-        const currentUrl = contents.getURL();
-        let loginUrl = 'https://walterwrites.ai/login';
-        if (/chatgpt|openai/i.test(currentUrl))       loginUrl = 'https://chat.openai.com/auth/login';
-        else if (/claude\.ai/i.test(currentUrl))       loginUrl = 'https://claude.ai/login';
-        else if (/gemini\.google/i.test(currentUrl))   loginUrl = 'https://gemini.google.com';
-        else if (/perplexity/i.test(currentUrl))       loginUrl = 'https://www.perplexity.ai';
-        contents.loadURL(loginUrl);
-        if (win) win.webContents.send('oauth-blocked', { url });
+      if (/accounts\.google\.com|facebook\.com\/(?:dialog|login)/i.test(url)) {
+        triggerBrowserLogin(url);
         return { action: 'deny' };
       }
       shell.openExternal(url);
@@ -501,8 +492,11 @@ function registerIPC() {
   ipcMain.on('check-updates-now', () => checkUpdates(true));
 
   // ── Browser-based login ──
-  ipcMain.handle('browser-login',        (_e, svc) => launchBrowserLogin(svc));
-  ipcMain.handle('finish-browser-login', (_e, svc) => finishBrowserLogin(svc));
+  ipcMain.handle('browser-login', (_e, svc) => launchBrowserLogin(svc));
+  ipcMain.on('cancel-browser-login', () => {
+    stopLoginBrowser();
+    if (win) win.webContents.send('browser-login-cancelled');
+  });
 }
 
 // ── Mini toggle ────────────────────────────────────────────────────────────────
@@ -637,10 +631,10 @@ ipcMain.on('delete-old-installs', (_e, dirs) => {
   }
 });
 
-// ── Browser-based login (cookie transfer from real Chrome/Edge) ──────────────
-// Google blocks OAuth inside Electron. This opens the user's real browser,
-// lets them log in with Google there, then extracts the session cookies via
-// Chrome DevTools Protocol and injects them into the webview's session.
+// ── Browser-based login (automatic popup + cookie transfer) ──────────────────
+// When the user clicks "Sign in with Google", we immediately open their real
+// Chrome/Edge browser, monitor it via CDP, and the moment login completes we
+// auto-inject cookies into the webview session and close the browser.
 
 const LOGIN_URLS = {
   chatgpt:    'https://chat.openai.com/auth/login',
@@ -653,18 +647,27 @@ const PARTITION_MAP = {
   chatgpt: 'persist:chatgpt', claude: 'persist:claude', gemini: 'persist:gemini',
   perplexity: 'persist:perplexity', walterw: 'persist:walterw',
 };
+// Domains we consider "logged in" for each service (must not be a login/auth page)
+const SERVICE_DOMAINS = {
+  chatgpt:    ['openai.com'],
+  claude:     ['claude.ai'],
+  gemini:     ['gemini.google.com'],
+  perplexity: ['perplexity.ai'],
+  walterw:    ['walterwrites.ai'],
+};
 
-let _loginProc = null;
-let _loginPort = null;
+let _loginProc   = null;
+let _loginPort   = null;
 let _loginTmpDir = null;
+let _loginPoll   = null;
 
 function findSystemBrowser() {
   const vars = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean);
-  const names = [
+  const browsers = [
     ['Microsoft', 'Edge', 'Application', 'msedge.exe'],
     ['Google', 'Chrome', 'Application', 'chrome.exe'],
   ];
-  for (const segs of names) {
+  for (const segs of browsers) {
     for (const base of vars) {
       const p = path.join(base, ...segs);
       try { fs.accessSync(p); return p; } catch (_) {}
@@ -673,20 +676,68 @@ function findSystemBrowser() {
   return null;
 }
 
+function getServiceFromContents(contents) {
+  const url = contents.getURL() || '';
+  if (/openai\.com/i.test(url))        return 'chatgpt';
+  if (/claude\.ai/i.test(url))         return 'claude';
+  if (/gemini\.google/i.test(url))     return 'gemini';
+  if (/perplexity\.ai/i.test(url))     return 'perplexity';
+  return 'walterw';
+}
+
+function isLoggedInUrl(service, url) {
+  const domains = SERVICE_DOMAINS[service] || SERVICE_DOMAINS.walterw;
+  const onServiceDomain = domains.some(d => url.includes(d));
+  const isAuthPage = /login|sign[-_]?in|auth|oauth|logout|callback|sso/i.test(url);
+  return onServiceDomain && !isAuthPage;
+}
+
+async function injectCookies(service, port) {
+  const cookies = await cdpGetAllCookies(port);
+  if (!cookies || cookies.length === 0) return 0;
+  const ses = session.fromPartition(PARTITION_MAP[service] || PARTITION_MAP.walterw);
+  let injected = 0;
+  for (const c of cookies) {
+    try {
+      const domain  = (c.domain || '').replace(/^\./, '');
+      const url     = `${c.secure ? 'https' : 'http'}://${domain}${c.path || '/'}`;
+      const details = { url, name: c.name, value: c.value, path: c.path || '/' };
+      if (c.domain)   details.domain   = c.domain;
+      if (c.secure)   details.secure   = true;
+      if (c.httpOnly) details.httpOnly  = true;
+      if (c.expires && c.expires > 0) details.expirationDate = c.expires;
+      details.sameSite = (c.sameSite || '').toLowerCase() === 'none' ? 'no_restriction'
+        : (c.sameSite || '').toLowerCase() === 'strict' ? 'strict' : 'lax';
+      await ses.cookies.set(details);
+      injected++;
+    } catch (_) {}
+  }
+  return injected;
+}
+
+function stopLoginBrowser() {
+  if (_loginPoll) { clearInterval(_loginPoll); _loginPoll = null; }
+  if (_loginProc) { try { _loginProc.kill(); } catch (_) {} _loginProc = null; }
+  _loginPort = null;
+  const d = _loginTmpDir; _loginTmpDir = null;
+  if (d) setTimeout(() => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }, 3000);
+}
+
 async function launchBrowserLogin(service) {
   const browser = findSystemBrowser();
   if (!browser) return { ok: false, error: 'No Chrome or Edge found on this PC' };
+
+  stopLoginBrowser(); // kill any existing session
 
   const port   = 19200 + Math.floor(Math.random() * 800);
   const tmpDir = path.join(os.tmpdir(), 'respgpt-login-' + Date.now());
   const url    = LOGIN_URLS[service] || LOGIN_URLS.walterw;
 
-  if (_loginProc) try { _loginProc.kill(); } catch (_) {}
-
   _loginProc = spawn(browser, [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${tmpDir}`,
     '--no-first-run', '--no-default-browser-check', '--disable-sync',
+    '--window-size=520,680',
     url,
   ], { detached: false, stdio: 'ignore' });
 
@@ -694,47 +745,43 @@ async function launchBrowserLogin(service) {
   _loginTmpDir = tmpDir;
 
   _loginProc.on('exit', () => {
-    _loginProc = null;
-    _loginPort = null;
-    setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} }, 2000);
+    if (_loginPoll) { clearInterval(_loginPoll); _loginPoll = null; }
+    _loginProc = null; _loginPort = null;
+    const d = _loginTmpDir; _loginTmpDir = null;
+    if (d) setTimeout(() => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }, 2000);
+    // Notify renderer the browser was closed without completing login
+    if (win) win.webContents.send('browser-login-cancelled');
   });
+
+  // Give browser 3s to start, then poll every 2s for login completion
+  setTimeout(() => startLoginPoll(service, port), 3000);
 
   return { ok: true };
 }
 
-async function finishBrowserLogin(service) {
-  if (!_loginPort) return { ok: false, error: 'No browser login in progress' };
+function startLoginPoll(service, port) {
+  if (_loginPoll) clearInterval(_loginPoll);
+  let attempts = 0;
+  _loginPoll = setInterval(async () => {
+    if (++attempts > 150) { stopLoginBrowser(); return; } // 5 min max
+    try {
+      // Get all open pages from the debug browser
+      const pages = await new Promise((res, rej) => {
+        http.get(`http://127.0.0.1:${port}/json/list`, r => {
+          let d = ''; r.on('data', c => d += c); r.on('end', () => { try { res(JSON.parse(d)); } catch(e) { rej(e); } });
+        }).on('error', rej);
+      });
+      // Check if any tab landed on a logged-in URL for this service
+      const done = pages.some(p => p.url && isLoggedInUrl(service, p.url));
+      if (!done) return;
 
-  try {
-    const cookies = await cdpGetAllCookies(_loginPort);
-    if (!cookies || cookies.length === 0) return { ok: false, error: 'No cookies found — make sure you completed sign-in' };
-
-    const ses     = session.fromPartition(PARTITION_MAP[service] || PARTITION_MAP.walterw);
-    let injected  = 0;
-
-    for (const c of cookies) {
-      try {
-        const domain  = (c.domain || '').replace(/^\./, '');
-        const url     = `${c.secure ? 'https' : 'http'}://${domain}${c.path || '/'}`;
-        const details = { url, name: c.name, value: c.value, path: c.path || '/' };
-        if (c.domain)   details.domain   = c.domain;
-        if (c.secure)   details.secure   = true;
-        if (c.httpOnly) details.httpOnly  = true;
-        if (c.expires && c.expires > 0) details.expirationDate = c.expires;
-        details.sameSite = (c.sameSite || '').toLowerCase() === 'none' ? 'no_restriction'
-          : (c.sameSite || '').toLowerCase() === 'strict' ? 'strict' : 'lax';
-        await ses.cookies.set(details);
-        injected++;
-      } catch (_) {}
-    }
-
-    // Kill browser & clean up
-    if (_loginProc) try { _loginProc.kill(); } catch (_) {}
-
-    return { ok: true, injected };
-  } catch (e) {
-    return { ok: false, error: e.message || 'Cookie extraction failed' };
-  }
+      // Login detected — extract cookies and inject
+      clearInterval(_loginPoll); _loginPoll = null;
+      const injected = await injectCookies(service, port);
+      stopLoginBrowser();
+      if (win) win.webContents.send('browser-login-done', { service, injected });
+    } catch (_) { /* browser not ready yet, keep waiting */ }
+  }, 2000);
 }
 
 // ── Minimal CDP client (raw WebSocket over TCP) ─────────────────────────────

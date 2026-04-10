@@ -1,4 +1,4 @@
 {
-  "version": "1.3.3",
-  "notes": "Google login: open your real browser, sign in, then click Transfer to bring your session into RespGPT automatically."
+  "version": "1.3.4",
+  "notes": "Google login: click Continue with Google, sign in the browser popup that opens, and your session transfers automatically."
 }

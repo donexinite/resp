@@ -45,8 +45,11 @@ contextBridge.exposeInMainWorld('respAPI', {
   checkUpdatesNow:  ()              => ipcRenderer.send('check-updates-now'),
 
   // ── Browser login ──
-  browserLogin:       svc           => ipcRenderer.invoke('browser-login', svc),
-  finishBrowserLogin: svc           => ipcRenderer.invoke('finish-browser-login', svc),
+  browserLogin:          svc => ipcRenderer.invoke('browser-login', svc),
+  cancelBrowserLogin:    ()  => ipcRenderer.send('cancel-browser-login'),
+  onBrowserLoginStarted: cb  => ipcRenderer.on('browser-login-started',   (_e, d) => cb(d)),
+  onBrowserLoginDone:    cb  => ipcRenderer.on('browser-login-done',      (_e, d) => cb(d)),
+  onBrowserLoginCancelled: cb => ipcRenderer.on('browser-login-cancelled', ()      => cb()),
 
   // ── Listeners ──
   onHotkey:          cb => ipcRenderer.on('hotkey',           (_e, d) => cb(d)),

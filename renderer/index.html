@@ -353,38 +353,15 @@
   </div>
 </div>
 
-<!-- ───── OAuth blocked notice ───── -->
+<!-- ───── OAuth login popup notice ───── -->
 <div id="oauth-notice" class="hidden">
   <div id="oauth-notice-box">
-    <!-- State 1: initial prompt -->
-    <div id="oauth-initial">
-      <div id="oauth-notice-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-      </div>
-      <p id="oauth-notice-text">Google/Facebook sign-in doesn't work in overlay apps.</p>
-      <p id="oauth-notice-sub">We'll open your real browser so you can sign in there. Your login will be transferred back automatically.</p>
-      <div id="oauth-notice-actions">
-        <button id="oauth-browser-login">Sign in with browser</button>
-        <button id="oauth-dismiss">Cancel</button>
-      </div>
+    <div id="oauth-spinner">
+      <span class="oauth-dot"></span><span class="oauth-dot"></span><span class="oauth-dot"></span>
     </div>
-    <!-- State 2: waiting for user to finish login -->
-    <div id="oauth-waiting" class="hidden">
-      <div id="oauth-waiting-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-        </svg>
-      </div>
-      <p id="oauth-waiting-text">Your browser is open — sign in with Google there</p>
-      <p id="oauth-waiting-hint">Once you're logged in, click the button below to transfer your session back.</p>
-      <div id="oauth-waiting-actions">
-        <button id="oauth-transfer">Transfer my login</button>
-        <button id="oauth-cancel-login">Cancel</button>
-      </div>
-    </div>
+    <p id="oauth-notice-text">Browser opened — sign in with Google there</p>
+    <p id="oauth-notice-sub">Your login will transfer automatically once done.</p>
+    <button id="oauth-cancel-login">Cancel</button>
   </div>
 </div>
 

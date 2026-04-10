@@ -813,66 +813,38 @@ R.onUpdateCheckResult(({ msg, manual }) => {
   if (manual) showToast(msg, 3500);
 });
 
-// ── OAuth blocked notice ───────────────────────────────────────────────────────
-const oauthNotice       = $('oauth-notice');
-const oauthInitial      = $('oauth-initial');
-const oauthWaiting      = $('oauth-waiting');
-const oauthDismiss      = $('oauth-dismiss');
-const oauthCancelLogin  = $('oauth-cancel-login');
-const oauthBrowserLogin = $('oauth-browser-login');
-const oauthTransfer     = $('oauth-transfer');
+// ── OAuth login popup (automatic) ─────────────────────────────────────────────
+const oauthNotice      = $('oauth-notice');
+const oauthCancelLogin = $('oauth-cancel-login');
 
-function showOAuthInitial() {
-  oauthInitial.classList.remove('hidden');
-  oauthWaiting.classList.add('hidden');
-  oauthNotice.classList.remove('hidden');
-}
-function hideOAuth() {
-  oauthNotice.classList.add('hidden');
-  oauthInitial.classList.remove('hidden');
-  oauthWaiting.classList.add('hidden');
-  oauthTransfer.disabled = false;
-  oauthTransfer.textContent = 'Transfer my login';
-}
+function hideOAuth() { oauthNotice.classList.add('hidden'); }
 
-R.onOAuthBlocked(() => showOAuthInitial());
-
-oauthDismiss.addEventListener('click', hideOAuth);
-oauthCancelLogin.addEventListener('click', hideOAuth);
-
-oauthBrowserLogin.addEventListener('click', async () => {
-  oauthBrowserLogin.disabled = true;
-  oauthBrowserLogin.textContent = 'Opening browser…';
-  const res = await R.browserLogin(activeSvc);
-  oauthBrowserLogin.disabled = false;
-  oauthBrowserLogin.textContent = 'Sign in with browser';
-  if (!res.ok) {
-    showToast(res.error || 'Could not open browser', 4000);
-    return;
-  }
-  // Switch to waiting state
-  oauthInitial.classList.add('hidden');
-  oauthWaiting.classList.remove('hidden');
+// Fallback: if browser can't be found, show a toast
+R.onOAuthBlocked(({ error }) => {
+  if (error) showToast(error, 5000);
 });
 
-oauthTransfer.addEventListener('click', async () => {
-  oauthTransfer.disabled = true;
-  oauthTransfer.textContent = 'Transferring…';
+// Auto-launched: browser opened, show waiting pill
+R.onBrowserLoginStarted(() => {
+  oauthNotice.classList.remove('hidden');
+});
 
-  const res = await R.finishBrowserLogin(activeSvc);
+// Login detected + cookies injected — reload webview
+R.onBrowserLoginDone(({ service }) => {
+  hideOAuth();
+  showToast('Signed in! Loading…', 2000);
+  setTimeout(() => {
+    const wv = document.getElementById('wv-' + service);
+    if (wv) wv.reload();
+  }, 800);
+});
 
-  if (res.ok) {
-    hideOAuth();
-    showToast('Logged in! Reloading…', 2500);
-    setTimeout(() => {
-      const wv = document.querySelector(`webview[id="wv-${activeSvc}"]`);
-      if (wv) wv.reload();
-    }, 1200);
-  } else {
-    oauthTransfer.disabled = false;
-    oauthTransfer.textContent = 'Transfer my login';
-    showToast(res.error || 'Transfer failed — make sure you finished signing in', 5000);
-  }
+// Browser was closed before completing
+R.onBrowserLoginCancelled(() => hideOAuth());
+
+oauthCancelLogin.addEventListener('click', () => {
+  R.cancelBrowserLogin();
+  hideOAuth();
 });
 
 // ── Old-install cleanup ────────────────────────────────────────────────────────
