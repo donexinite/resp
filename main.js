@@ -178,14 +178,15 @@ function setupWebviewSessions() {
 
     // Intercept Google/Facebook OAuth navigations — launch a real browser popup
     // that handles the OAuth properly, then auto-transfer cookies back.
-    const triggerBrowserLogin = (url) => {
+    const triggerBrowserLogin = (oauthUrl) => {
       const service = getServiceFromContents(contents);
-      launchBrowserLogin(service).then(result => {
+      // Pass the real Google OAuth URL so browser goes straight to Google sign-in
+      launchBrowserLogin(service, oauthUrl).then(result => {
         if (!win) return;
         if (result.ok) {
           win.webContents.send('browser-login-started', { service });
         } else {
-          win.webContents.send('oauth-blocked', { url, error: result.error });
+          win.webContents.send('oauth-blocked', { url: oauthUrl, error: result.error });
         }
       });
     };
@@ -754,7 +755,7 @@ function stopLoginBrowser() {
   if (d) setTimeout(() => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) {} }, 3000);
 }
 
-async function launchBrowserLogin(service) {
+async function launchBrowserLogin(service, directUrl = null) {
   const browser = findSystemBrowser();
   if (!browser) return { ok: false, error: 'No Chrome or Edge found on this PC' };
 
@@ -762,7 +763,8 @@ async function launchBrowserLogin(service) {
 
   const port   = 19200 + Math.floor(Math.random() * 800);
   const tmpDir = path.join(os.tmpdir(), 'respgpt-login-' + Date.now());
-  const url    = LOGIN_URLS[service] || LOGIN_URLS.walterw;
+  // Use the intercepted Google OAuth URL directly — user goes straight to Google sign-in
+  const url    = directUrl || LOGIN_URLS[service] || LOGIN_URLS.walterw;
 
   _loginProc = spawn(browser, [
     `--remote-debugging-port=${port}`,
