@@ -814,22 +814,27 @@ R.onUpdateCheckResult(({ msg, manual }) => {
 });
 
 // ── OAuth login popup (automatic) ─────────────────────────────────────────────
-const oauthNotice      = $('oauth-notice');
-const oauthCancelLogin = $('oauth-cancel-login');
+const oauthNotice        = $('oauth-notice');
+const oauthCancelLogin   = $('oauth-cancel-login');
+const oauthManualTransfer = $('oauth-manual-transfer');
 
-function hideOAuth() { oauthNotice.classList.add('hidden'); }
+function hideOAuth() {
+  oauthNotice.classList.add('hidden');
+  oauthManualTransfer.disabled = false;
+  oauthManualTransfer.textContent = "I'm signed in";
+}
 
 // Fallback: if browser can't be found, show a toast
-R.onOAuthBlocked(({ error }) => {
+R.onOAuthBlocked(({ error } = {}) => {
   if (error) showToast(error, 5000);
 });
 
-// Auto-launched: browser opened, show waiting pill
+// Auto-launched: show waiting notice
 R.onBrowserLoginStarted(() => {
   oauthNotice.classList.remove('hidden');
 });
 
-// Login detected + cookies injected — reload webview
+// Auto or manual transfer complete — reload webview
 R.onBrowserLoginDone(({ service }) => {
   hideOAuth();
   showToast('Signed in! Loading…', 2000);
@@ -845,6 +850,19 @@ R.onBrowserLoginCancelled(() => hideOAuth());
 oauthCancelLogin.addEventListener('click', () => {
   R.cancelBrowserLogin();
   hideOAuth();
+});
+
+// Manual fallback — user clicks "I'm signed in" if auto-detect didn't fire
+oauthManualTransfer.addEventListener('click', async () => {
+  oauthManualTransfer.disabled = true;
+  oauthManualTransfer.textContent = 'Transferring…';
+  const res = await R.manualBrowserTransfer(activeSvc);
+  if (!res.ok) {
+    oauthManualTransfer.disabled = false;
+    oauthManualTransfer.textContent = "I'm signed in";
+    showToast(res.error || 'Could not read session — make sure you completed sign-in', 5000);
+  }
+  // on success, browser-login-done IPC fires and handles reload
 });
 
 // ── Old-install cleanup ────────────────────────────────────────────────────────

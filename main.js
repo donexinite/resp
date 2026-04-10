@@ -497,6 +497,14 @@ function registerIPC() {
     stopLoginBrowser();
     if (win) win.webContents.send('browser-login-cancelled');
   });
+  ipcMain.handle('manual-browser-transfer', async (_e, svc) => {
+    if (!_loginPort) return { ok: false, error: 'No browser session active' };
+    let injected = 0;
+    try { injected = await injectCookies(svc, _loginPort); } catch (e) { return { ok: false, error: e.message }; }
+    stopLoginBrowser();
+    if (win) win.webContents.send('browser-login-done', { service: svc, injected });
+    return { ok: true, injected };
+  });
 }
 
 // ── Mini toggle ────────────────────────────────────────────────────────────────
@@ -688,13 +696,36 @@ function getServiceFromContents(contents) {
 function isLoggedInUrl(service, url) {
   const domains = SERVICE_DOMAINS[service] || SERVICE_DOMAINS.walterw;
   const onServiceDomain = domains.some(d => url.includes(d));
-  const isAuthPage = /login|sign[-_]?in|auth|oauth|logout|callback|sso/i.test(url);
+  // Only block on explicit login/logout pages — NOT callback (OAuth returns there)
+  const isAuthPage = /\/login|\/logout|\/sign[-_]?in|\/signup/i.test(url);
   return onServiceDomain && !isAuthPage;
 }
 
+function cdpListPages(port) {
+  return new Promise((res, rej) => {
+    http.get(`http://127.0.0.1:${port}/json/list`, r => {
+      let d = ''; r.on('data', c => d += c);
+      r.on('end', () => { try { res(JSON.parse(d)); } catch (e) { rej(e); } });
+    }).on('error', rej);
+  });
+}
+
 async function injectCookies(service, port) {
-  const cookies = await cdpGetAllCookies(port);
-  if (!cookies || cookies.length === 0) return 0;
+  // Use a page-level target — browser-level CDP doesn't expose Network.getAllCookies reliably
+  const pages = await cdpListPages(port);
+  const domains = SERVICE_DOMAINS[service] || SERVICE_DOMAINS.walterw;
+
+  // Prefer a page on the service domain; otherwise use any debuggable page
+  const target = pages.find(p => p.webSocketDebuggerUrl && domains.some(d => (p.url || '').includes(d)))
+    || pages.find(p => p.webSocketDebuggerUrl && p.type === 'page')
+    || pages.find(p => p.webSocketDebuggerUrl);
+
+  if (!target || !target.webSocketDebuggerUrl) throw new Error('No debuggable page found');
+
+  const result = await cdpWsSend(target.webSocketDebuggerUrl, 'Network.getAllCookies', {});
+  const cookies = result.cookies || [];
+  if (!cookies.length) return 0;
+
   const ses = session.fromPartition(PARTITION_MAP[service] || PARTITION_MAP.walterw);
   let injected = 0;
   for (const c of cookies) {
@@ -765,22 +796,23 @@ function startLoginPoll(service, port) {
   _loginPoll = setInterval(async () => {
     if (++attempts > 150) { stopLoginBrowser(); return; } // 5 min max
     try {
-      // Get all open pages from the debug browser
-      const pages = await new Promise((res, rej) => {
-        http.get(`http://127.0.0.1:${port}/json/list`, r => {
-          let d = ''; r.on('data', c => d += c); r.on('end', () => { try { res(JSON.parse(d)); } catch(e) { rej(e); } });
-        }).on('error', rej);
-      });
-      // Check if any tab landed on a logged-in URL for this service
+      const pages = await cdpListPages(port);
       const done = pages.some(p => p.url && isLoggedInUrl(service, p.url));
       if (!done) return;
 
-      // Login detected — extract cookies and inject
+      // Login detected — stop polling, wait 2s for final redirects/cookie-setting to complete
       clearInterval(_loginPoll); _loginPoll = null;
-      const injected = await injectCookies(service, port);
-      stopLoginBrowser();
-      if (win) win.webContents.send('browser-login-done', { service, injected });
-    } catch (_) { /* browser not ready yet, keep waiting */ }
+      setTimeout(async () => {
+        let injected = 0;
+        try {
+          injected = await injectCookies(service, port);
+        } catch (e) {
+          console.error('Cookie injection error:', e.message);
+        }
+        stopLoginBrowser();
+        if (win) win.webContents.send('browser-login-done', { service, injected });
+      }, 2000);
+    } catch (_) { /* browser not ready yet, keep polling */ }
   }, 2000);
 }
 

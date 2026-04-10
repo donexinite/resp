@@ -870,8 +870,26 @@ input:checked + .sw-slider::before { transform: translateX(16px); background: #f
   line-height: 1.5;
   margin: 0 0 4px;
 }
+#oauth-notice-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+#oauth-manual-transfer {
+  padding: 7px 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms;
+}
+#oauth-manual-transfer:hover { opacity: 0.85; }
+#oauth-manual-transfer:disabled { opacity: 0.4; cursor: not-allowed; }
 #oauth-cancel-login {
-  padding: 7px 16px;
+  padding: 7px 14px;
   background: transparent;
   border: 1px solid var(--b2);
   border-radius: 8px;
